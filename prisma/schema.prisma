@@ -9,4 +9,18 @@ datasource db {
   extensions = [vector]
 }
 
-// Models added by /feature per docs/PLAN.md Section 3 (Repository, CodeChunk, ChatMessage)
+model Repository {
+  id           String   @id @default(cuid())
+  source       String
+  sourceUrl    String?
+  name         String
+  status       String   @default("queued")
+  jobId        String?
+  fileCount    Int      @default(0)
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  @@map("repositories")
+}
+
+// Remaining models (CodeChunk, RepositoryOverview, ChatMessage) added by later /feature runs per docs/PLAN.md Section 3

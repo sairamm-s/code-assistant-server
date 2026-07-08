@@ -6,9 +6,15 @@ if (missing.length > 0) {
   throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
 }
 
-// worker registrations mount here (workers/*.worker.ts) — added by /feature
+import { ingestionWorker } from './workers/ingestion.worker';
 
 console.info('Worker process started');
 
-process.on('SIGTERM', () => process.exit(0));
-process.on('SIGINT', () => process.exit(0));
+process.on('SIGTERM', async () => {
+  await ingestionWorker.close();
+  process.exit(0);
+});
+process.on('SIGINT', async () => {
+  await ingestionWorker.close();
+  process.exit(0);
+});
