@@ -1,15 +1,22 @@
 import { Request, Response } from 'express';
 import { STATUS } from '../helpers/response.helper';
 import { SendMessageBody } from '../interfaces/chat.interface';
+import { ChatRequestLogEntry } from '../interfaces/observability.interface';
 import { getRepositoryById } from '../services/repository.service';
 import { saveMessage, getMessagesByRepositoryId } from '../services/chat.service';
 import { buildRetrievalContext, buildChatPrompt } from '../services/prompt.service';
 import { generateText } from '../services/generation.service';
 import { extractCitations } from '../services/citation.service';
 import { shouldRefuseForInsufficientContext, buildRefusalResponse } from '../services/guardrails.service';
+import logger from '../lib/logger';
+
+const logChatRequest = (entry: ChatRequestLogEntry): void => {
+  logger.info('chat_request', entry);
+};
 
 export const sendMessage = async (req: Request, res: Response): Promise<void> => {
   const repositoryId = String(req.params.repositoryId);
+  const requestStart = Date.now();
 
   try {
     const repository = await getRepositoryById(repositoryId);
@@ -24,27 +31,59 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
 
     const { message } = req.body as SendMessageBody;
 
+    const retrievalStart = Date.now();
     const context = await buildRetrievalContext(repositoryId, message);
+    const retrievalMs = Date.now() - retrievalStart;
+
+    const chunkLogs = context.chunks.map((chunk) => ({
+      filePath: chunk.filePath,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      similarity: chunk.similarity,
+    }));
 
     if (shouldRefuseForInsufficientContext(context.chunks)) {
       const refusal = buildRefusalResponse();
       await saveMessage(repositoryId, 'user', message);
       await saveMessage(repositoryId, 'assistant', refusal.answer, refusal.citations);
+
+      logChatRequest({
+        repositoryId,
+        query: message,
+        chunkCount: context.chunks.length,
+        chunks: chunkLogs,
+        refused: true,
+        latencyMs: { retrievalMs, generationMs: 0, totalMs: Date.now() - requestStart },
+        tokens: null,
+      });
+
       res.json({ status: STATUS.success, data: refusal });
       return;
     }
 
     const prompt = buildChatPrompt(message, context);
-    const answer = await generateText(prompt);
+    const generationStart = Date.now();
+    const { text: answer, usage } = await generateText(prompt);
+    const generationMs = Date.now() - generationStart;
 
     const citations = extractCitations(answer, context.chunks);
 
     await saveMessage(repositoryId, 'user', message);
     await saveMessage(repositoryId, 'assistant', answer, citations);
 
+    logChatRequest({
+      repositoryId,
+      query: message,
+      chunkCount: context.chunks.length,
+      chunks: chunkLogs,
+      refused: false,
+      latencyMs: { retrievalMs, generationMs, totalMs: Date.now() - requestStart },
+      tokens: usage,
+    });
+
     res.json({ status: STATUS.success, data: { answer, citations } });
   } catch (err) {
-    console.error('Failed to generate chat response', err);
+    logger.error('Failed to generate chat response', { repositoryId, error: err instanceof Error ? err.message : err });
     res.status(500).json({ status: STATUS.failed, message: 'Failed to generate a response' });
   }
 };
@@ -56,7 +95,7 @@ export const getChatHistory = async (req: Request, res: Response): Promise<void>
     const messages = await getMessagesByRepositoryId(repositoryId);
     res.json({ status: STATUS.success, data: { messages } });
   } catch (err) {
-    console.error('Failed to fetch chat history', err);
+    logger.error('Failed to fetch chat history', { repositoryId, error: err instanceof Error ? err.message : err });
     res.status(500).json({ status: STATUS.failed, message: 'Failed to fetch chat history' });
   }
 };

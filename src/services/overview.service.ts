@@ -77,7 +77,7 @@ export const buildRepositoryOverview = async (
     keyFileContents,
   });
 
-  const content = await generateText(prompt);
+  const { text } = await generateText(prompt);
 
-  return [{ scope: 'root', source: 'generated', content }];
+  return [{ scope: 'root', source: 'generated', content: text }];
 };

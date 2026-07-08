@@ -10,6 +10,7 @@ import {
   getRepositoryById,
   setRepositoryJobId,
 } from '../services/repository.service';
+import logger from '../lib/logger';
 
 export const ingestRepository = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -25,7 +26,7 @@ export const ingestRepository = async (req: Request, res: Response): Promise<voi
 
     res.status(201).json({ status: STATUS.success, data: { repositoryId: repository.id } });
   } catch (err) {
-    console.error('Failed to enqueue ingestion', err);
+    logger.error('Failed to enqueue ingestion', { error: err instanceof Error ? err.message : err });
     res.status(500).json({ status: STATUS.failed, message: 'Failed to start ingestion' });
   }
 };
@@ -52,7 +53,7 @@ export const ingestUploadedRepository = async (req: Request, res: Response): Pro
 
     res.status(201).json({ status: STATUS.success, data: { repositoryId: repository.id } });
   } catch (err) {
-    console.error('Failed to enqueue upload ingestion', err);
+    logger.error('Failed to enqueue upload ingestion', { error: err instanceof Error ? err.message : err });
     await fs.rm(uploadedFile.path, { force: true });
     res.status(500).json({ status: STATUS.failed, message: 'Failed to start ingestion' });
   }
@@ -79,7 +80,7 @@ export const getRepository = async (req: Request, res: Response): Promise<void> 
       },
     });
   } catch (err) {
-    console.error('Failed to fetch repository', err);
+    logger.error('Failed to fetch repository', { error: err instanceof Error ? err.message : err });
     res.status(500).json({ status: STATUS.failed, message: 'Failed to fetch repository' });
   }
 };
