@@ -51,9 +51,10 @@ services/generation.service.ts — generateText(prompt) — single-call wrapper 
 services/overview.service.ts — findExistingOverviews(workingDir, files) (checks root/client/server for CLAUDE.md or README.md), selectKeyFiles(files) (manifest + entry-file heuristic), buildRepositoryOverview(repoName, workingDir, files) — uses existing overviews if ANY scope has one (does not backfill missing scopes), else generates one via repository-overview.prompt.ts
 services/repository-overview.service.ts — saveOverviews(repositoryId, overviews), getOverviewsByRepositoryId(repositoryId) — normal Prisma Client (RepositoryOverview has no Unsupported fields)
 services/retrieval.service.ts — retrieveRelevantChunks(repositoryId, queryEmbedding, topK) — raw SQL pgvector cosine similarity search (<=> operator), scoped to repositoryId, ordered best-first
-services/prompt.service.ts — buildRetrievalContext(repositoryId, query) (embeds query via RETRIEVAL_QUERY task type, fetches top-K chunks + repo overview), buildChatPrompt(question, context) (assembles final prompt text, truncates lowest-similarity chunks first if over MAX_CONTEXT_CHARS). NOTE: has light grounding instructions (cite file:line, hedge if insufficient context) but is NOT the Guardrails feature — refusal thresholds and prompt-injection resistance on retrieved content are still a separate, not-yet-built feature.
+services/prompt.service.ts — buildRetrievalContext(repositoryId, query) (embeds query via RETRIEVAL_QUERY task type, fetches top-K chunks + repo overview), buildChatPrompt(question, context) (assembles final prompt text, truncates lowest-similarity chunks first if over MAX_CONTEXT_CHARS, wraps each chunk in <untrusted_code_context> delimiters + instructs the model never to treat retrieved content as commands — basic prompt-injection resistance, not a guarantee)
 services/chat.service.ts — saveMessage(repositoryId, role, content, citations?), getMessagesByRepositoryId(repositoryId, limit = 100) — bounded (most recent N, oldest-first for display)
 services/citation.service.ts — extractCitations(answerText, chunks) — parses `file.ts:12-20` markers from the model's answer text, resolves each to the retrieved chunk it most likely refers to (same file, overlapping/closest line range), dedupes; falls back to the top 3 highest-similarity chunks if the model didn't cite in the expected format. Replaces the earlier "return every context chunk" placeholder from the Chat Q&A feature — citations now reflect what the answer actually referenced.
+services/guardrails.service.ts — shouldRefuseForInsufficientContext(chunks) (true if no chunks retrieved or best similarity < MIN_SIMILARITY_THRESHOLD), buildRefusalResponse() (canned refusal, no LLM call made — real cost/latency win for clearly-irrelevant questions, not just a text hedge)
 
 ## Queues / Workers
 queues/ingestion.queue.ts — BullMQ Queue('ingestion'), attempts/backoff read from config/queue.config.ts
@@ -64,6 +65,7 @@ config/queue.config.ts — INGESTION_JOB_ATTEMPTS, INGESTION_JOB_BACKOFF_MS, ING
 config/embedding.config.ts — MAX_CHUNKS_PER_REPOSITORY (default 3000), EMBEDDING_BATCH_SIZE (default 20), EMBEDDING_MODEL_NAME (default text-embedding-004) — all env-overridable. MAX_CHUNKS_PER_REPOSITORY is the knob for staying under the embedding provider's free-tier rate limit.
 config/llm.config.ts — GENERATION_MODEL_NAME (default gemini-2.0-flash), MAX_KEY_FILES_FOR_OVERVIEW (default 8), MAX_KEY_FILE_CHARS (default 2000) — bounds the repository overview prompt size regardless of repo size.
 config/retrieval.config.ts — RETRIEVAL_TOP_K (default 8), MAX_CONTEXT_CHARS (default 12000) — env-overridable.
+config/guardrails.config.ts — MIN_SIMILARITY_THRESHOLD (default 0.5) — env-overridable, the cutoff below which a chat request is refused before calling the LLM.
 
 ## DB Models / Schema
 prisma/schema.prisma — Repository (id, source, sourceUrl, name, status, jobId, fileCount, errorMessage, createdAt); CodeChunk (id, repositoryId, filePath, startLine, endLine, content, language, embedding vector(768) [Unsupported type — raw SQL only], createdAt); RepositoryOverview (id, repositoryId, scope ['root'|'client'|'server'], source ['existing'|'generated'], content, createdAt); ChatMessage (id, repositoryId, role ['user'|'assistant'], content, citations Json?, createdAt)
@@ -101,6 +103,7 @@ EMBEDDING_MODEL_NAME — optional, default text-embedding-004
 GENERATION_MODEL_NAME — optional, default gemini-2.0-flash
 MAX_KEY_FILES_FOR_OVERVIEW — optional, default 8
 MAX_KEY_FILE_CHARS — optional, default 2000
+MIN_SIMILARITY_THRESHOLD — optional, default 0.5
 
 ## Response shape
 { status: 'success' | 'failed' | 'noContent', data?, message? }
