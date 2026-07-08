@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
 import { STATUS } from '../helpers/response.helper';
-import { SendMessageBody, ChatCitation } from '../interfaces/chat.interface';
+import { SendMessageBody } from '../interfaces/chat.interface';
 import { getRepositoryById } from '../services/repository.service';
 import { saveMessage, getMessagesByRepositoryId } from '../services/chat.service';
 import { buildRetrievalContext, buildChatPrompt } from '../services/prompt.service';
 import { generateText } from '../services/generation.service';
+import { extractCitations } from '../services/citation.service';
 
 export const sendMessage = async (req: Request, res: Response): Promise<void> => {
   const repositoryId = String(req.params.repositoryId);
@@ -26,12 +27,7 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     const prompt = buildChatPrompt(message, context);
     const answer = await generateText(prompt);
 
-    const citations: ChatCitation[] = context.chunks.map((chunk) => ({
-      filePath: chunk.filePath,
-      startLine: chunk.startLine,
-      endLine: chunk.endLine,
-      snippet: chunk.content,
-    }));
+    const citations = extractCitations(answer, context.chunks);
 
     await saveMessage(repositoryId, 'user', message);
     await saveMessage(repositoryId, 'assistant', answer, citations);
