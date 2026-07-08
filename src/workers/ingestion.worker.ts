@@ -6,6 +6,7 @@ import { IngestJobPayload } from '../interfaces/repository.interface';
 import { getRepositoryWorkingDir } from '../lib/repo-storage';
 import { cloneRepository, extractZip, removeWorkingDir, walkFiles } from '../services/ingestion.service';
 import { updateRepositoryStatus } from '../services/repository.service';
+import { INGESTION_WORKER_CONCURRENCY } from '../config/queue.config';
 
 const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
   const { repositoryId } = job.data;
@@ -39,7 +40,7 @@ const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
 
 export const ingestionWorker = new Worker<IngestJobPayload>(INGESTION_QUEUE_NAME, processIngestJob, {
   connection: redis,
-  concurrency: 3,
+  concurrency: INGESTION_WORKER_CONCURRENCY,
 });
 
 ingestionWorker.on('failed', (job, err) => {

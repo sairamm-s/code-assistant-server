@@ -44,8 +44,11 @@ services/repository.service.ts — createGithubRepository, createUploadRepositor
 services/ingestion.service.ts — cloneRepository (simple-git shallow clone), extractZip (adm-zip), walkFiles (filtered recursive walk), removeWorkingDir
 
 ## Queues / Workers
-queues/ingestion.queue.ts — BullMQ Queue('ingestion'), 3 attempts + exponential backoff
-workers/ingestion.worker.ts — branches on job.data.source (github clone | upload zip extract), walks files, updates Repository.status (cloning → ready|failed); leaves working dir on disk on success for the chunking feature to consume. NOTE: assumes API and worker share a filesystem for uploaded zips (tmp/uploads/{id}.zip) — fine for single-instance/Docker Compose, needs shared storage (e.g. S3) if workers scale across hosts.
+queues/ingestion.queue.ts — BullMQ Queue('ingestion'), attempts/backoff read from config/queue.config.ts
+workers/ingestion.worker.ts — branches on job.data.source (github clone | upload zip extract), walks files, updates Repository.status (cloning → ready|failed); leaves working dir on disk on success for the chunking feature to consume. Concurrency read from config/queue.config.ts. NOTE: assumes API and worker share a filesystem for uploaded zips (tmp/uploads/{id}.zip) — fine for single-instance/Docker Compose, needs shared storage (e.g. S3) if workers scale across hosts.
+
+## Config
+config/queue.config.ts — INGESTION_JOB_ATTEMPTS, INGESTION_JOB_BACKOFF_MS, INGESTION_WORKER_CONCURRENCY — all env-overridable, defaults 3/5000/3. Concurrency is the knob for staying under the embedding provider's rate limit once the chunking/embedding feature exists.
 
 ## DB Models / Schema
 prisma/schema.prisma — Repository (id, source, sourceUrl, name, status, jobId, fileCount, errorMessage, createdAt)
@@ -69,6 +72,9 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/code_doc_assistant
 REDIS_URL=redis://localhost:6379
 GEMINI_API_KEY=your_gemini_api_key
 NODE_ENV=development
+INGESTION_JOB_ATTEMPTS — optional, default 3
+INGESTION_JOB_BACKOFF_MS — optional, default 5000
+INGESTION_WORKER_CONCURRENCY — optional, default 3
 
 ## Response shape
 { status: 'success' | 'failed' | 'noContent', data?, message? }
