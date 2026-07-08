@@ -6,6 +6,7 @@ import { saveMessage, getMessagesByRepositoryId } from '../services/chat.service
 import { buildRetrievalContext, buildChatPrompt } from '../services/prompt.service';
 import { generateText } from '../services/generation.service';
 import { extractCitations } from '../services/citation.service';
+import { shouldRefuseForInsufficientContext, buildRefusalResponse } from '../services/guardrails.service';
 
 export const sendMessage = async (req: Request, res: Response): Promise<void> => {
   const repositoryId = String(req.params.repositoryId);
@@ -24,6 +25,15 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     const { message } = req.body as SendMessageBody;
 
     const context = await buildRetrievalContext(repositoryId, message);
+
+    if (shouldRefuseForInsufficientContext(context.chunks)) {
+      const refusal = buildRefusalResponse();
+      await saveMessage(repositoryId, 'user', message);
+      await saveMessage(repositoryId, 'assistant', refusal.answer, refusal.citations);
+      res.json({ status: STATUS.success, data: refusal });
+      return;
+    }
+
     const prompt = buildChatPrompt(message, context);
     const answer = await generateText(prompt);
 
