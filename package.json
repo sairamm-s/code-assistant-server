@@ -17,6 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "adm-zip": "^0.5.18",
     "bullmq": "^5.79.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -29,6 +30,7 @@
     "simple-git": "^3.36.0"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/morgan": "^1.9.10",
