@@ -23,4 +23,19 @@ model Repository {
   @@map("repositories")
 }
 
-// Remaining models (CodeChunk, RepositoryOverview, ChatMessage) added by later /feature runs per docs/PLAN.md Section 3
+model CodeChunk {
+  id           String                @id @default(cuid())
+  repositoryId String
+  filePath     String
+  startLine    Int
+  endLine      Int
+  content      String                @db.Text
+  language     String?
+  embedding    Unsupported("vector(768)")
+  createdAt    DateTime              @default(now())
+
+  @@index([repositoryId])
+  @@map("code_chunks")
+}
+
+// Remaining models (RepositoryOverview, ChatMessage) added by later /feature runs per docs/PLAN.md Section 3

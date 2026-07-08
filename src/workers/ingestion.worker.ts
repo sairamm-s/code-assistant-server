@@ -6,6 +6,8 @@ import { IngestJobPayload } from '../interfaces/repository.interface';
 import { getRepositoryWorkingDir } from '../lib/repo-storage';
 import { cloneRepository, extractZip, removeWorkingDir, walkFiles } from '../services/ingestion.service';
 import { updateRepositoryStatus } from '../services/repository.service';
+import { buildEmbeddedChunks } from '../services/pipeline.service';
+import { saveChunks } from '../services/code-chunk.service';
 import { INGESTION_WORKER_CONCURRENCY } from '../config/queue.config';
 
 const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
@@ -24,11 +26,19 @@ const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
 
     const files = await walkFiles(workingDir);
 
-    // Working dir is intentionally left on disk — the chunking/embedding
-    // feature (next in build order) reads file contents from it. Cleanup
-    // of the working dir is that feature's responsibility once it has
-    // consumed the files, not this one's.
+    // TODO(repository-overview-generation): the Repository Overview feature
+    // (docs/PLAN.md Section 10, item 6) plugs in here — check for an
+    // existing CLAUDE.md/README.md among `files`, or generate one via
+    // server/src/prompts/repository-overview.prompt.ts — before chunking.
+    // Not built yet; this feature only covers chunking/embedding.
+
+    await updateRepositoryStatus(repositoryId, 'chunking');
+    await updateRepositoryStatus(repositoryId, 'embedding');
+    const embeddedChunks = await buildEmbeddedChunks(workingDir, files);
+    await saveChunks(repositoryId, embeddedChunks);
+
     await updateRepositoryStatus(repositoryId, 'ready', { fileCount: files.length });
+    await removeWorkingDir(workingDir);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Ingestion failed';
     console.error('Ingestion job failed', { repositoryId, error: message });
