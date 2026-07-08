@@ -17,6 +17,16 @@ export const createGithubRepository = (url: string): Promise<Repository> =>
     },
   });
 
+export const createUploadRepository = (originalFileName: string): Promise<Repository> =>
+  prisma.repository.create({
+    data: {
+      source: 'upload',
+      sourceUrl: null,
+      name: originalFileName.replace(/\.zip$/i, ''),
+      status: 'queued',
+    },
+  });
+
 export const setRepositoryJobId = (repositoryId: string, jobId: string): Promise<Repository> =>
   prisma.repository.update({
     where: { id: repositoryId },

@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import simpleGit from 'simple-git';
+import AdmZip from 'adm-zip';
 
 const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.venv', '__pycache__']);
 const MAX_FILE_SIZE_BYTES = 500 * 1024;
@@ -11,6 +12,12 @@ const BINARY_EXTENSIONS = new Set([
 export const cloneRepository = async (url: string, destinationDir: string): Promise<void> => {
   await fs.mkdir(path.dirname(destinationDir), { recursive: true });
   await simpleGit().clone(url, destinationDir, ['--depth', '1']);
+};
+
+export const extractZip = async (zipPath: string, destinationDir: string): Promise<void> => {
+  await fs.mkdir(destinationDir, { recursive: true });
+  const zip = new AdmZip(zipPath);
+  zip.extractAllTo(destinationDir, true);
 };
 
 export const walkFiles = async (rootDir: string): Promise<string[]> => {

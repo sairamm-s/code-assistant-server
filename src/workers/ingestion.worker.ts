@@ -1,18 +1,25 @@
+import fs from 'fs/promises';
 import { Job, Worker } from 'bullmq';
 import redis from '../lib/redis';
 import { INGESTION_QUEUE_NAME } from '../queues/ingestion.queue';
 import { IngestJobPayload } from '../interfaces/repository.interface';
 import { getRepositoryWorkingDir } from '../lib/repo-storage';
-import { cloneRepository, removeWorkingDir, walkFiles } from '../services/ingestion.service';
+import { cloneRepository, extractZip, removeWorkingDir, walkFiles } from '../services/ingestion.service';
 import { updateRepositoryStatus } from '../services/repository.service';
 
 const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
-  const { repositoryId, url } = job.data;
+  const { repositoryId } = job.data;
   const workingDir = getRepositoryWorkingDir(repositoryId);
 
   try {
     await updateRepositoryStatus(repositoryId, 'cloning');
-    await cloneRepository(url, workingDir);
+
+    if (job.data.source === 'github') {
+      await cloneRepository(job.data.url, workingDir);
+    } else {
+      await extractZip(job.data.zipPath, workingDir);
+      await fs.rm(job.data.zipPath, { force: true });
+    }
 
     const files = await walkFiles(workingDir);
 
