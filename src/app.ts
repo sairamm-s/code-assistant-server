@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { STATUS } from './helpers/response.helper';
+import repositoryRoute from './routes/v1/repository.route';
 
 const app = express();
 
@@ -15,7 +16,7 @@ app.get('/api/v1/health', (req: Request, res: Response) => {
   res.json({ status: STATUS.success, data: { ok: true } });
 });
 
-// mount feature routes here (routes/v1/*)
+app.use('/api/v1/repository', repositoryRoute);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({ status: STATUS.failed, message: 'Not found' });

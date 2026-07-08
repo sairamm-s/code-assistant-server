@@ -37,19 +37,27 @@ src/
   worker.ts                         # worker process entry point — registers workers
 
 ## Routes (add one line per route file as features are built)
-routes/v1/                          # none yet — add here as /feature creates them
-[Example: routes/v1/repository.route.ts — POST /repository/ingest, GET /repository/:id]
+routes/v1/repository.route.ts — POST /repository/ingest (github only), GET /repository/:id
 
 ## Services (add one line per service as features are built)
-services/                           # none yet — add here as /feature creates them
-[Example: services/repository.service.ts — createRepository, getRepositoryStatus]
+services/repository.service.ts — createGithubRepository, setRepositoryJobId, updateRepositoryStatus, getRepositoryById
+services/ingestion.service.ts — cloneRepository (simple-git shallow clone), walkFiles (filtered recursive walk), removeWorkingDir
+
+## Queues / Workers
+queues/ingestion.queue.ts — BullMQ Queue('ingestion'), 3 attempts + exponential backoff
+workers/ingestion.worker.ts — clones repo, walks files, updates Repository.status (cloning → ready|failed); leaves working dir on disk on success for the chunking feature to consume
 
 ## DB Models / Schema
-prisma/schema.prisma — models added per docs/PLAN.md Section 3 (Repository, CodeChunk, RepositoryOverview, ChatMessage)
-# none yet — add here as /feature creates them
+prisma/schema.prisma — Repository (id, source, sourceUrl, name, status, jobId, fileCount, errorMessage, createdAt)
+Remaining models (CodeChunk, RepositoryOverview, ChatMessage) — add here as /feature creates them
 
 ## Interfaces
-src/interfaces/                     # none yet — add here as /feature creates them
+interfaces/repository.interface.ts — RepositoryStatus, IngestGithubBody, IngestJobPayload, RepositorySummary
+
+## Other
+lib/repo-storage.ts — getRepositoryWorkingDir(repositoryId) — resolves ./tmp/repos/{id} on disk
+helpers/validation.helper.ts — validate(schema) Joi middleware
+validations/repository.validation.ts — ingestRepositoryValidation (github URL only, upload not yet supported)
 
 ## Environment Variables
 PORT=5000
