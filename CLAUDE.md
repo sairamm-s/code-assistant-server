@@ -38,6 +38,7 @@ src/
 
 ## Routes (add one line per route file as features are built)
 routes/v1/repository.route.ts — POST /repository/ingest (github), POST /repository/ingest/upload (zip, multer), GET /repository/:id
+routes/v1/chat.route.ts — POST /chat/:repositoryId/message (404 if repo not found, 409 if status !== 'ready'), GET /chat/:repositoryId/history
 
 ## Services (add one line per service as features are built)
 services/repository.service.ts — createGithubRepository, createUploadRepository, setRepositoryJobId, updateRepositoryStatus, getRepositoryById
@@ -51,6 +52,7 @@ services/overview.service.ts — findExistingOverviews(workingDir, files) (check
 services/repository-overview.service.ts — saveOverviews(repositoryId, overviews), getOverviewsByRepositoryId(repositoryId) — normal Prisma Client (RepositoryOverview has no Unsupported fields)
 services/retrieval.service.ts — retrieveRelevantChunks(repositoryId, queryEmbedding, topK) — raw SQL pgvector cosine similarity search (<=> operator), scoped to repositoryId, ordered best-first
 services/prompt.service.ts — buildRetrievalContext(repositoryId, query) (embeds query via RETRIEVAL_QUERY task type, fetches top-K chunks + repo overview), buildChatPrompt(question, context) (assembles final prompt text, truncates lowest-similarity chunks first if over MAX_CONTEXT_CHARS). NOTE: has light grounding instructions (cite file:line, hedge if insufficient context) but is NOT the Guardrails feature — refusal thresholds and prompt-injection resistance on retrieved content are still a separate, not-yet-built feature.
+services/chat.service.ts — saveMessage(repositoryId, role, content, citations?), getMessagesByRepositoryId(repositoryId, limit = 100) — bounded (most recent N, oldest-first for display)
 
 ## Queues / Workers
 queues/ingestion.queue.ts — BullMQ Queue('ingestion'), attempts/backoff read from config/queue.config.ts
@@ -63,14 +65,14 @@ config/llm.config.ts — GENERATION_MODEL_NAME (default gemini-2.0-flash), MAX_K
 config/retrieval.config.ts — RETRIEVAL_TOP_K (default 8), MAX_CONTEXT_CHARS (default 12000) — env-overridable.
 
 ## DB Models / Schema
-prisma/schema.prisma — Repository (id, source, sourceUrl, name, status, jobId, fileCount, errorMessage, createdAt); CodeChunk (id, repositoryId, filePath, startLine, endLine, content, language, embedding vector(768) [Unsupported type — raw SQL only], createdAt); RepositoryOverview (id, repositoryId, scope ['root'|'client'|'server'], source ['existing'|'generated'], content, createdAt)
-Remaining models (ChatMessage) — add here as /feature creates them
+prisma/schema.prisma — Repository (id, source, sourceUrl, name, status, jobId, fileCount, errorMessage, createdAt); CodeChunk (id, repositoryId, filePath, startLine, endLine, content, language, embedding vector(768) [Unsupported type — raw SQL only], createdAt); RepositoryOverview (id, repositoryId, scope ['root'|'client'|'server'], source ['existing'|'generated'], content, createdAt); ChatMessage (id, repositoryId, role ['user'|'assistant'], content, citations Json?, createdAt)
 
 ## Interfaces
 interfaces/repository.interface.ts — RepositoryStatus, IngestGithubBody, IngestGithubJobPayload, IngestUploadJobPayload, IngestJobPayload (union), RepositorySummary
 interfaces/chunk.interface.ts — ChunkResult, EmbeddedChunk
 interfaces/overview.interface.ts — RepositoryOverviewScope, RepositoryOverviewSource, RepositoryOverviewResult
 interfaces/retrieval.interface.ts — RetrievedChunk, ChatContext
+interfaces/chat.interface.ts — SendMessageBody, ChatCitation, ChatMessageSummary
 
 ## Middleware
 middleware/upload.middleware.ts — uploadZipMiddleware (multer, .zip only, 50MB limit, disk storage to tmp/uploads/)
@@ -81,6 +83,7 @@ lib/upload-storage.ts — getUploadZipPath(repositoryId), getUploadsRootDir() �
 lib/gemini.ts — GoogleGenerativeAI client singleton
 helpers/validation.helper.ts — validate(schema) Joi middleware
 validations/repository.validation.ts — ingestRepositoryValidation (github URL only — upload route uses multer/manual validation, not Joi, since it's multipart)
+validations/chat.validation.ts — sendMessageValidation (message: 1-4000 chars, required)
 
 ## Environment Variables
 PORT=5000
