@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { STATUS } from './helpers/response.helper';
 import repositoryRoute from './routes/v1/repository.route';
 import chatRoute from './routes/v1/chat.route';
+import logger from './lib/logger';
 
 const app = express();
 
@@ -25,7 +26,7 @@ app.use((req: Request, res: Response) => {
 });
 
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error(err);
+  logger.error('Unhandled error', { error: err.message, stack: err.stack });
   res.status(500).json({ status: STATUS.failed, message: 'Internal server error' });
 });
 

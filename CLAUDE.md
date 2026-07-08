@@ -47,7 +47,7 @@ services/chunking.service.ts — chunkFile(filePath, content) — regex function
 services/embedding.service.ts — embedTexts(texts[], taskType?) — batches calls to Gemini text-embedding-004 via batchEmbedContents, batch size from config/embedding.config.ts, defaults to RETRIEVAL_DOCUMENT task type; embedQuery(text) — single-text wrapper using RETRIEVAL_QUERY task type (asymmetric embeddings — matters for retrieval quality)
 services/code-chunk.service.ts — saveChunks(repositoryId, chunks) — raw SQL insert (embedding is a Prisma Unsupported vector type, not writable via normal Client API)
 services/pipeline.service.ts — buildEmbeddedChunks(workingDir, files) — orchestrates read → chunk → cap at MAX_CHUNKS_PER_REPOSITORY → embed in one batched pass
-services/generation.service.ts — generateText(prompt) — single-call wrapper around Gemini chat generation (config/llm.config.ts GENERATION_MODEL_NAME)
+services/generation.service.ts — generateText(prompt) — single-call wrapper around Gemini chat generation (config/llm.config.ts GENERATION_MODEL_NAME), returns { text, usage: TokenUsage | null } from Gemini's usageMetadata
 services/overview.service.ts — findExistingOverviews(workingDir, files) (checks root/client/server for CLAUDE.md or README.md), selectKeyFiles(files) (manifest + entry-file heuristic), buildRepositoryOverview(repoName, workingDir, files) — uses existing overviews if ANY scope has one (does not backfill missing scopes), else generates one via repository-overview.prompt.ts
 services/repository-overview.service.ts — saveOverviews(repositoryId, overviews), getOverviewsByRepositoryId(repositoryId) — normal Prisma Client (RepositoryOverview has no Unsupported fields)
 services/retrieval.service.ts — retrieveRelevantChunks(repositoryId, queryEmbedding, topK) — raw SQL pgvector cosine similarity search (<=> operator), scoped to repositoryId, ordered best-first
@@ -58,7 +58,7 @@ services/guardrails.service.ts — shouldRefuseForInsufficientContext(chunks) (t
 
 ## Queues / Workers
 queues/ingestion.queue.ts — BullMQ Queue('ingestion'), attempts/backoff read from config/queue.config.ts
-workers/ingestion.worker.ts — branches on job.data.source (github clone | upload zip extract), walks files, builds+saves repository overview, chunks+embeds+saves (status cloning → chunking → embedding → ready|failed), removes working dir on success. Concurrency read from config/queue.config.ts. NOTE: assumes API and worker share a filesystem for uploaded zips (tmp/uploads/{id}.zip) — fine for single-instance/Docker Compose, needs shared storage (e.g. S3) if workers scale across hosts.
+workers/ingestion.worker.ts — branches on job.data.source (github clone | upload zip extract), walks files, builds+saves repository overview, chunks+embeds+saves (status cloning → chunking → embedding → ready|failed), removes working dir on success. Concurrency read from config/queue.config.ts. Logs structured `ingestion_stage` events (repositoryId, stage, durationMs) via lib/logger.ts. NOTE: assumes API and worker share a filesystem for uploaded zips (tmp/uploads/{id}.zip) — fine for single-instance/Docker Compose, needs shared storage (e.g. S3) if workers scale across hosts.
 
 ## Config
 config/queue.config.ts — INGESTION_JOB_ATTEMPTS, INGESTION_JOB_BACKOFF_MS, INGESTION_WORKER_CONCURRENCY — all env-overridable, defaults 3/5000/3.
@@ -76,6 +76,7 @@ interfaces/chunk.interface.ts — ChunkResult, EmbeddedChunk
 interfaces/overview.interface.ts — RepositoryOverviewScope, RepositoryOverviewSource, RepositoryOverviewResult
 interfaces/retrieval.interface.ts — RetrievedChunk, ChatContext
 interfaces/chat.interface.ts — SendMessageBody, ChatCitation, ChatMessageSummary
+interfaces/observability.interface.ts — TokenUsage, ChatRequestLogEntry
 
 ## Middleware
 middleware/upload.middleware.ts — uploadZipMiddleware (multer, .zip only, 50MB limit, disk storage to tmp/uploads/)
@@ -84,6 +85,7 @@ middleware/upload.middleware.ts — uploadZipMiddleware (multer, .zip only, 50MB
 lib/repo-storage.ts — getRepositoryWorkingDir(repositoryId) — resolves ./tmp/repos/{id} on disk
 lib/upload-storage.ts — getUploadZipPath(repositoryId), getUploadsRootDir() — resolves ./tmp/uploads/{id}.zip
 lib/gemini.ts — GoogleGenerativeAI client singleton
+lib/logger.ts — winston structured JSON logger (info/warn/error levels), used for `chat_request` events (chat.controller.ts) and `ingestion_stage` events (ingestion.worker.ts). Startup logs in db.ts/index.ts/worker.ts remain plain console.info/error per node.md skill's explicit exception for startup-only logs.
 helpers/validation.helper.ts — validate(schema) Joi middleware
 validations/repository.validation.ts — ingestRepositoryValidation (github URL only — upload route uses multer/manual validation, not Joi, since it's multipart)
 validations/chat.validation.ts — sendMessageValidation (message: 1-4000 chars, required)
