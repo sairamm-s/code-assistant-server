@@ -29,6 +29,8 @@ src/
   lib/
     prisma.ts                       # PrismaClient singleton
     redis.ts                        # ioredis singleton (BullMQ connection)
+  prompts/
+    repository-overview.prompt.ts   # single-call repo overview prompt — see arch.md section 8
   app.ts                            # express app, middleware, route mounts
   db.ts                             # DB connect function
   index.ts                          # API entry point — calls connectDb then listen
@@ -43,7 +45,7 @@ services/                           # none yet — add here as /feature creates 
 [Example: services/repository.service.ts — createRepository, getRepositoryStatus]
 
 ## DB Models / Schema
-prisma/schema.prisma — models added per docs/PLAN.md Section 3 (Repository, CodeChunk, ChatMessage)
+prisma/schema.prisma — models added per docs/PLAN.md Section 3 (Repository, CodeChunk, RepositoryOverview, ChatMessage)
 # none yet — add here as /feature creates them
 
 ## Interfaces
