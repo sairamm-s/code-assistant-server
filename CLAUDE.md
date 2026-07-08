@@ -32,7 +32,7 @@ src/
   prompts/
     repository-overview.prompt.ts   # single-call repo overview prompt — see arch.md section 8
   app.ts                            # express app, middleware, route mounts
-  db.ts                             # DB connect function
+  db.ts                             # DB connect function — also ensures the pgvector extension + ivfflat index exist (idempotent) on startup
   index.ts                          # API entry point — calls connectDb then listen
   worker.ts                         # worker process entry point — registers workers
 
@@ -42,20 +42,26 @@ routes/v1/repository.route.ts — POST /repository/ingest (github), POST /reposi
 ## Services (add one line per service as features are built)
 services/repository.service.ts — createGithubRepository, createUploadRepository, setRepositoryJobId, updateRepositoryStatus, getRepositoryById
 services/ingestion.service.ts — cloneRepository (simple-git shallow clone), extractZip (adm-zip), walkFiles (filtered recursive walk), removeWorkingDir
+services/chunking.service.ts — chunkFile(filePath, content) — regex function/class boundary heuristic (top-level only — see comment on fragmenting bug fixed during this feature), fallback fixed 60-line window w/ 10-line overlap
+services/embedding.service.ts — embedTexts(texts[]) — batches calls to Gemini text-embedding-004 via batchEmbedContents, batch size from config/embedding.config.ts
+services/code-chunk.service.ts — saveChunks(repositoryId, chunks) — raw SQL insert (embedding is a Prisma Unsupported vector type, not writable via normal Client API)
+services/pipeline.service.ts — buildEmbeddedChunks(workingDir, files) — orchestrates read → chunk → cap at MAX_CHUNKS_PER_REPOSITORY → embed in one batched pass
 
 ## Queues / Workers
 queues/ingestion.queue.ts — BullMQ Queue('ingestion'), attempts/backoff read from config/queue.config.ts
-workers/ingestion.worker.ts — branches on job.data.source (github clone | upload zip extract), walks files, updates Repository.status (cloning → ready|failed); leaves working dir on disk on success for the chunking feature to consume. Concurrency read from config/queue.config.ts. NOTE: assumes API and worker share a filesystem for uploaded zips (tmp/uploads/{id}.zip) — fine for single-instance/Docker Compose, needs shared storage (e.g. S3) if workers scale across hosts.
+workers/ingestion.worker.ts — branches on job.data.source (github clone | upload zip extract), walks files, chunks+embeds+saves (status cloning → chunking → embedding → ready|failed), removes working dir on success. Concurrency read from config/queue.config.ts. Has a TODO marker for where Repository Overview Generation (not yet built) plugs in. NOTE: assumes API and worker share a filesystem for uploaded zips (tmp/uploads/{id}.zip) — fine for single-instance/Docker Compose, needs shared storage (e.g. S3) if workers scale across hosts.
 
 ## Config
-config/queue.config.ts — INGESTION_JOB_ATTEMPTS, INGESTION_JOB_BACKOFF_MS, INGESTION_WORKER_CONCURRENCY — all env-overridable, defaults 3/5000/3. Concurrency is the knob for staying under the embedding provider's rate limit once the chunking/embedding feature exists.
+config/queue.config.ts — INGESTION_JOB_ATTEMPTS, INGESTION_JOB_BACKOFF_MS, INGESTION_WORKER_CONCURRENCY — all env-overridable, defaults 3/5000/3.
+config/embedding.config.ts — MAX_CHUNKS_PER_REPOSITORY (default 3000), EMBEDDING_BATCH_SIZE (default 20), EMBEDDING_MODEL_NAME (default text-embedding-004) — all env-overridable. MAX_CHUNKS_PER_REPOSITORY is the knob for staying under the embedding provider's free-tier rate limit.
 
 ## DB Models / Schema
-prisma/schema.prisma — Repository (id, source, sourceUrl, name, status, jobId, fileCount, errorMessage, createdAt)
-Remaining models (CodeChunk, RepositoryOverview, ChatMessage) — add here as /feature creates them
+prisma/schema.prisma — Repository (id, source, sourceUrl, name, status, jobId, fileCount, errorMessage, createdAt); CodeChunk (id, repositoryId, filePath, startLine, endLine, content, language, embedding vector(768) [Unsupported type — raw SQL only], createdAt)
+Remaining models (RepositoryOverview, ChatMessage) — add here as /feature creates them
 
 ## Interfaces
 interfaces/repository.interface.ts — RepositoryStatus, IngestGithubBody, IngestGithubJobPayload, IngestUploadJobPayload, IngestJobPayload (union), RepositorySummary
+interfaces/chunk.interface.ts — ChunkResult, EmbeddedChunk
 
 ## Middleware
 middleware/upload.middleware.ts — uploadZipMiddleware (multer, .zip only, 50MB limit, disk storage to tmp/uploads/)
@@ -63,6 +69,7 @@ middleware/upload.middleware.ts — uploadZipMiddleware (multer, .zip only, 50MB
 ## Other
 lib/repo-storage.ts — getRepositoryWorkingDir(repositoryId) — resolves ./tmp/repos/{id} on disk
 lib/upload-storage.ts — getUploadZipPath(repositoryId), getUploadsRootDir() — resolves ./tmp/uploads/{id}.zip
+lib/gemini.ts — GoogleGenerativeAI client singleton
 helpers/validation.helper.ts — validate(schema) Joi middleware
 validations/repository.validation.ts — ingestRepositoryValidation (github URL only — upload route uses multer/manual validation, not Joi, since it's multipart)
 
@@ -75,6 +82,9 @@ NODE_ENV=development
 INGESTION_JOB_ATTEMPTS — optional, default 3
 INGESTION_JOB_BACKOFF_MS — optional, default 5000
 INGESTION_WORKER_CONCURRENCY — optional, default 3
+MAX_CHUNKS_PER_REPOSITORY — optional, default 3000
+EMBEDDING_BATCH_SIZE — optional, default 20
+EMBEDDING_MODEL_NAME — optional, default text-embedding-004
 
 ## Response shape
 { status: 'success' | 'failed' | 'noContent', data?, message? }
