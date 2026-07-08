@@ -38,4 +38,16 @@ model CodeChunk {
   @@map("code_chunks")
 }
 
-// Remaining models (RepositoryOverview, ChatMessage) added by later /feature runs per docs/PLAN.md Section 3
+model RepositoryOverview {
+  id           String   @id @default(cuid())
+  repositoryId String
+  scope        String
+  source       String
+  content      String   @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([repositoryId])
+  @@map("repository_overviews")
+}
+
+// Remaining models (ChatMessage) added by later /feature runs per docs/PLAN.md Section 3

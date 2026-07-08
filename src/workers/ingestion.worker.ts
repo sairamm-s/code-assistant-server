@@ -5,9 +5,11 @@ import { INGESTION_QUEUE_NAME } from '../queues/ingestion.queue';
 import { IngestJobPayload } from '../interfaces/repository.interface';
 import { getRepositoryWorkingDir } from '../lib/repo-storage';
 import { cloneRepository, extractZip, removeWorkingDir, walkFiles } from '../services/ingestion.service';
-import { updateRepositoryStatus } from '../services/repository.service';
+import { getRepositoryById, updateRepositoryStatus } from '../services/repository.service';
 import { buildEmbeddedChunks } from '../services/pipeline.service';
 import { saveChunks } from '../services/code-chunk.service';
+import { buildRepositoryOverview } from '../services/overview.service';
+import { saveOverviews } from '../services/repository-overview.service';
 import { INGESTION_WORKER_CONCURRENCY } from '../config/queue.config';
 
 const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
@@ -26,11 +28,9 @@ const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
 
     const files = await walkFiles(workingDir);
 
-    // TODO(repository-overview-generation): the Repository Overview feature
-    // (docs/PLAN.md Section 10, item 6) plugs in here — check for an
-    // existing CLAUDE.md/README.md among `files`, or generate one via
-    // server/src/prompts/repository-overview.prompt.ts — before chunking.
-    // Not built yet; this feature only covers chunking/embedding.
+    const repository = await getRepositoryById(repositoryId);
+    const overviews = await buildRepositoryOverview(repository?.name ?? repositoryId, workingDir, files);
+    await saveOverviews(repositoryId, overviews);
 
     await updateRepositoryStatus(repositoryId, 'chunking');
     await updateRepositoryStatus(repositoryId, 'embedding');
