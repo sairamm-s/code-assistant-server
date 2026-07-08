@@ -43,12 +43,14 @@ routes/v1/repository.route.ts — POST /repository/ingest (github), POST /reposi
 services/repository.service.ts — createGithubRepository, createUploadRepository, setRepositoryJobId, updateRepositoryStatus, getRepositoryById
 services/ingestion.service.ts — cloneRepository (simple-git shallow clone), extractZip (adm-zip), walkFiles (filtered recursive walk), removeWorkingDir
 services/chunking.service.ts — chunkFile(filePath, content) — regex function/class boundary heuristic (top-level only — see comment on fragmenting bug fixed during this feature), fallback fixed 60-line window w/ 10-line overlap
-services/embedding.service.ts — embedTexts(texts[]) — batches calls to Gemini text-embedding-004 via batchEmbedContents, batch size from config/embedding.config.ts
+services/embedding.service.ts — embedTexts(texts[], taskType?) — batches calls to Gemini text-embedding-004 via batchEmbedContents, batch size from config/embedding.config.ts, defaults to RETRIEVAL_DOCUMENT task type; embedQuery(text) — single-text wrapper using RETRIEVAL_QUERY task type (asymmetric embeddings — matters for retrieval quality)
 services/code-chunk.service.ts — saveChunks(repositoryId, chunks) — raw SQL insert (embedding is a Prisma Unsupported vector type, not writable via normal Client API)
 services/pipeline.service.ts — buildEmbeddedChunks(workingDir, files) — orchestrates read → chunk → cap at MAX_CHUNKS_PER_REPOSITORY → embed in one batched pass
 services/generation.service.ts — generateText(prompt) — single-call wrapper around Gemini chat generation (config/llm.config.ts GENERATION_MODEL_NAME)
 services/overview.service.ts — findExistingOverviews(workingDir, files) (checks root/client/server for CLAUDE.md or README.md), selectKeyFiles(files) (manifest + entry-file heuristic), buildRepositoryOverview(repoName, workingDir, files) — uses existing overviews if ANY scope has one (does not backfill missing scopes), else generates one via repository-overview.prompt.ts
 services/repository-overview.service.ts — saveOverviews(repositoryId, overviews), getOverviewsByRepositoryId(repositoryId) — normal Prisma Client (RepositoryOverview has no Unsupported fields)
+services/retrieval.service.ts — retrieveRelevantChunks(repositoryId, queryEmbedding, topK) — raw SQL pgvector cosine similarity search (<=> operator), scoped to repositoryId, ordered best-first
+services/prompt.service.ts — buildRetrievalContext(repositoryId, query) (embeds query via RETRIEVAL_QUERY task type, fetches top-K chunks + repo overview), buildChatPrompt(question, context) (assembles final prompt text, truncates lowest-similarity chunks first if over MAX_CONTEXT_CHARS). NOTE: has light grounding instructions (cite file:line, hedge if insufficient context) but is NOT the Guardrails feature — refusal thresholds and prompt-injection resistance on retrieved content are still a separate, not-yet-built feature.
 
 ## Queues / Workers
 queues/ingestion.queue.ts — BullMQ Queue('ingestion'), attempts/backoff read from config/queue.config.ts
@@ -58,6 +60,7 @@ workers/ingestion.worker.ts — branches on job.data.source (github clone | uplo
 config/queue.config.ts — INGESTION_JOB_ATTEMPTS, INGESTION_JOB_BACKOFF_MS, INGESTION_WORKER_CONCURRENCY — all env-overridable, defaults 3/5000/3.
 config/embedding.config.ts — MAX_CHUNKS_PER_REPOSITORY (default 3000), EMBEDDING_BATCH_SIZE (default 20), EMBEDDING_MODEL_NAME (default text-embedding-004) — all env-overridable. MAX_CHUNKS_PER_REPOSITORY is the knob for staying under the embedding provider's free-tier rate limit.
 config/llm.config.ts — GENERATION_MODEL_NAME (default gemini-2.0-flash), MAX_KEY_FILES_FOR_OVERVIEW (default 8), MAX_KEY_FILE_CHARS (default 2000) — bounds the repository overview prompt size regardless of repo size.
+config/retrieval.config.ts — RETRIEVAL_TOP_K (default 8), MAX_CONTEXT_CHARS (default 12000) — env-overridable.
 
 ## DB Models / Schema
 prisma/schema.prisma — Repository (id, source, sourceUrl, name, status, jobId, fileCount, errorMessage, createdAt); CodeChunk (id, repositoryId, filePath, startLine, endLine, content, language, embedding vector(768) [Unsupported type — raw SQL only], createdAt); RepositoryOverview (id, repositoryId, scope ['root'|'client'|'server'], source ['existing'|'generated'], content, createdAt)
@@ -67,6 +70,7 @@ Remaining models (ChatMessage) — add here as /feature creates them
 interfaces/repository.interface.ts — RepositoryStatus, IngestGithubBody, IngestGithubJobPayload, IngestUploadJobPayload, IngestJobPayload (union), RepositorySummary
 interfaces/chunk.interface.ts — ChunkResult, EmbeddedChunk
 interfaces/overview.interface.ts — RepositoryOverviewScope, RepositoryOverviewSource, RepositoryOverviewResult
+interfaces/retrieval.interface.ts — RetrievedChunk, ChatContext
 
 ## Middleware
 middleware/upload.middleware.ts — uploadZipMiddleware (multer, .zip only, 50MB limit, disk storage to tmp/uploads/)

@@ -1,3 +1,4 @@
+import { TaskType } from '@google/generative-ai';
 import genAI from '../lib/gemini';
 import { EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL_NAME } from '../config/embedding.config';
 
@@ -9,7 +10,15 @@ const chunkArray = <T>(items: T[], size: number): T[][] => {
   return batches;
 };
 
-export const embedTexts = async (texts: string[]): Promise<number[][]> => {
+// taskType defaults to RETRIEVAL_DOCUMENT (code chunks being indexed).
+// embedQuery below passes RETRIEVAL_QUERY — Gemini's embeddings are
+// asymmetric per task type, so matching this to how the vector is used
+// (indexed content vs. a search query) meaningfully improves similarity
+// search quality over using one embedding mode for both.
+export const embedTexts = async (
+  texts: string[],
+  taskType: TaskType = TaskType.RETRIEVAL_DOCUMENT,
+): Promise<number[][]> => {
   if (texts.length === 0) return [];
 
   const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL_NAME });
@@ -18,10 +27,15 @@ export const embedTexts = async (texts: string[]): Promise<number[][]> => {
 
   for (const batch of batches) {
     const result = await model.batchEmbedContents({
-      requests: batch.map((text) => ({ content: { role: 'user', parts: [{ text }] } })),
+      requests: batch.map((text) => ({ content: { role: 'user', parts: [{ text }] }, taskType })),
     });
     embeddings.push(...result.embeddings.map((e) => e.values));
   }
 
   return embeddings;
+};
+
+export const embedQuery = async (text: string): Promise<number[]> => {
+  const [embedding] = await embedTexts([text], TaskType.RETRIEVAL_QUERY);
+  return embedding;
 };
