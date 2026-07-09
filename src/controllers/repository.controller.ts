@@ -1,16 +1,27 @@
 import fs from 'fs/promises';
 import { Request, Response } from 'express';
+import { Repository } from '@prisma/client';
 import { STATUS } from '../helpers/response.helper';
-import { IngestGithubBody } from '../interfaces/repository.interface';
+import { IngestGithubBody, RepositorySummary } from '../interfaces/repository.interface';
 import { ingestionQueue } from '../queues/ingestion.queue';
 import { getUploadZipPath } from '../lib/upload-storage';
 import {
   createGithubRepository,
   createUploadRepository,
   getRepositoryById,
+  listRepositories,
   setRepositoryJobId,
 } from '../services/repository.service';
 import logger from '../lib/logger';
+
+const toRepositorySummary = (repository: Repository): RepositorySummary => ({
+  id: repository.id,
+  name: repository.name,
+  source: repository.source,
+  status: repository.status as RepositorySummary['status'],
+  fileCount: repository.fileCount,
+  errorMessage: repository.errorMessage,
+});
 
 export const ingestRepository = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -68,19 +79,19 @@ export const getRepository = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    res.json({
-      status: STATUS.success,
-      data: {
-        id: repository.id,
-        name: repository.name,
-        source: repository.source,
-        status: repository.status,
-        fileCount: repository.fileCount,
-        errorMessage: repository.errorMessage,
-      },
-    });
+    res.json({ status: STATUS.success, data: toRepositorySummary(repository) });
   } catch (err) {
     logger.error('Failed to fetch repository', { error: err instanceof Error ? err.message : err });
     res.status(500).json({ status: STATUS.failed, message: 'Failed to fetch repository' });
+  }
+};
+
+export const getRepositories = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const repositories = await listRepositories();
+    res.json({ status: STATUS.success, data: { repositories: repositories.map(toRepositorySummary) } });
+  } catch (err) {
+    logger.error('Failed to list repositories', { error: err instanceof Error ? err.message : err });
+    res.status(500).json({ status: STATUS.failed, message: 'Failed to list repositories' });
   }
 };

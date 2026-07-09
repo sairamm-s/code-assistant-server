@@ -3,7 +3,7 @@ import multer, { FileFilterCallback } from 'multer';
 import { Request } from 'express';
 import { getUploadsRootDir } from '../lib/upload-storage';
 
-const MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_SIZE_BYTES = 200 * 1024 * 1024;
 
 fs.mkdirSync(getUploadsRootDir(), { recursive: true });
 

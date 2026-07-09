@@ -8,7 +8,8 @@ if (missing.length > 0) {
   throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
 }
 
-const PORT = process.env.PORT || 5000;
+// 5000 conflicts with macOS's AirPlay Receiver (ControlCenter) on many Macs — 5050 avoids it.
+const PORT = process.env.PORT || 5050;
 
 connectDb()
   .then(() => {

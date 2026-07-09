@@ -1,6 +1,15 @@
 import { TaskType } from '@google/generative-ai';
 import genAI from '../lib/gemini';
-import { EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL_NAME } from '../config/embedding.config';
+import { EMBEDDING_BATCH_SIZE, EMBEDDING_MODEL_NAME, EMBEDDING_OUTPUT_DIMENSIONS } from '../config/embedding.config';
+
+// The installed @google/generative-ai SDK's types predate outputDimensionality
+// support, but the REST API accepts it — this widens the per-request type to
+// include it without resorting to `any`.
+interface EmbedContentRequestWithDimensions {
+  content: { role: string; parts: { text: string }[] };
+  taskType: TaskType;
+  outputDimensionality: number;
+}
 
 const chunkArray = <T>(items: T[], size: number): T[][] => {
   const batches: T[][] = [];
@@ -26,9 +35,12 @@ export const embedTexts = async (
   const embeddings: number[][] = [];
 
   for (const batch of batches) {
-    const result = await model.batchEmbedContents({
-      requests: batch.map((text) => ({ content: { role: 'user', parts: [{ text }] }, taskType })),
-    });
+    const requests: EmbedContentRequestWithDimensions[] = batch.map((text) => ({
+      content: { role: 'user', parts: [{ text }] },
+      taskType,
+      outputDimensionality: EMBEDDING_OUTPUT_DIMENSIONS,
+    }));
+    const result = await model.batchEmbedContents({ requests });
     embeddings.push(...result.embeddings.map((e) => e.values));
   }
 

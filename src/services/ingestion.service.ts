@@ -3,11 +3,11 @@ import path from 'path';
 import simpleGit from 'simple-git';
 import AdmZip from 'adm-zip';
 
-const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.venv', '__pycache__']);
-const MAX_FILE_SIZE_BYTES = 500 * 1024;
-const BINARY_EXTENSIONS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.pdf', '.zip', '.woff', '.woff2', '.ttf', '.mp4', '.mp3',
-]);
+// Only dependency/build-output directories — not real source, and processing
+// them would burn the free-tier embedding quota on vendored/generated code.
+// Extraction itself (extractZip below) is never filtered — the zip's exact
+// contents land on disk unmodified; this only affects what gets chunked/embedded.
+const IGNORED_DIRS = new Set(['node_modules', 'dist', 'build', '.next']);
 
 export const cloneRepository = async (url: string, destinationDir: string): Promise<void> => {
   await fs.mkdir(path.dirname(destinationDir), { recursive: true });
@@ -33,13 +33,7 @@ export const walkFiles = async (rootDir: string): Promise<string[]> => {
         continue;
       }
 
-      const ext = path.extname(entry.name).toLowerCase();
-      if (BINARY_EXTENSIONS.has(ext)) continue;
-
       const fullPath = path.join(currentDir, entry.name);
-      const stats = await fs.stat(fullPath);
-      if (stats.size > MAX_FILE_SIZE_BYTES) continue;
-
       results.push(path.relative(rootDir, fullPath));
     }
   };
