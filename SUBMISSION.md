@@ -2,8 +2,6 @@
 
 This doc answers the assignment's required sections (b–h). Setup instructions live in each repo's own `README.md` (`server/README.md`, `client/README.md`) — this file is duplicated in both repos so it's visible regardless of which one a reviewer opens first.
 
-Two companion docs go deeper on specific decisions and are worth skimming alongside this: `arch.md` (one section per architectural decision, alternatives considered, why rejected) and `prod.md` (what the brief is actually grading, and the reasoning behind scope cuts). Both are referenced inline below rather than repeated.
-
 ---
 
 ## b. Architecture overview
