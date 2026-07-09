@@ -11,10 +11,22 @@ import { saveChunks } from '../services/code-chunk.service';
 import { buildRepositoryOverview } from '../services/overview.service';
 import { saveOverviews } from '../services/repository-overview.service';
 import { INGESTION_WORKER_CONCURRENCY } from '../config/queue.config';
+import { ENABLE_CHUNKING_EMBEDDING } from '../config/embedding.config';
 import logger from '../lib/logger';
 
 const logStage = (repositoryId: string, stage: string, durationMs?: number): void => {
   logger.info('ingestion_stage', { repositoryId, stage, durationMs });
+};
+
+const MAX_USER_FACING_ERROR_CHARS = 200;
+
+// Third-party API errors (e.g. Gemini rate-limit responses) can be huge raw
+// JSON blobs — never surface those verbatim to the client (node.md skill:
+// never send raw errors to the client). The full message is always logged
+// server-side via logger.error regardless of what's stored here.
+const toUserFacingErrorMessage = (message: string): string => {
+  if (message.length <= MAX_USER_FACING_ERROR_CHARS) return message;
+  return `${message.slice(0, MAX_USER_FACING_ERROR_CHARS)}... (see server logs for full details)`;
 };
 
 const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
@@ -45,8 +57,14 @@ const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
     stageStart = Date.now();
     await updateRepositoryStatus(repositoryId, 'chunking');
     await updateRepositoryStatus(repositoryId, 'embedding');
-    const embeddedChunks = await buildEmbeddedChunks(workingDir, files);
-    await saveChunks(repositoryId, embeddedChunks);
+    if (ENABLE_CHUNKING_EMBEDDING) {
+      const embeddedChunks = await buildEmbeddedChunks(workingDir, files);
+      await saveChunks(repositoryId, embeddedChunks);
+    } else {
+      logger.info('Chunking/embedding skipped (ENABLE_CHUNKING_EMBEDDING=false) — chat will use the repository overview only', {
+        repositoryId,
+      });
+    }
     logStage(repositoryId, 'chunking_embedding', Date.now() - stageStart);
 
     await updateRepositoryStatus(repositoryId, 'ready', { fileCount: files.length });
@@ -56,7 +74,7 @@ const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Ingestion failed';
     logger.error('Ingestion job failed', { repositoryId, error: message, durationMs: Date.now() - jobStart });
-    await updateRepositoryStatus(repositoryId, 'failed', { errorMessage: message });
+    await updateRepositoryStatus(repositoryId, 'failed', { errorMessage: toUserFacingErrorMessage(message) });
     await removeWorkingDir(workingDir);
     throw err;
   }

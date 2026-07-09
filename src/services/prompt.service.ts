@@ -3,16 +3,22 @@ import { embedQuery } from './embedding.service';
 import { retrieveRelevantChunks } from './retrieval.service';
 import { getOverviewsByRepositoryId } from './repository-overview.service';
 import { RETRIEVAL_TOP_K, MAX_CONTEXT_CHARS } from '../config/retrieval.config';
+import { ENABLE_CHUNKING_EMBEDDING } from '../config/embedding.config';
 
 export const buildRetrievalContext = async (repositoryId: string, query: string): Promise<ChatContext> => {
-  const [queryEmbedding, overviews] = await Promise.all([
-    embedQuery(query),
-    getOverviewsByRepositoryId(repositoryId),
-  ]);
-
-  const chunks = await retrieveRelevantChunks(repositoryId, queryEmbedding, RETRIEVAL_TOP_K);
-
+  const overviews = await getOverviewsByRepositoryId(repositoryId);
   const overview = overviews.length > 0 ? overviews.map((o) => `[${o.scope}]\n${o.content}`).join('\n\n') : null;
+
+  // When chunking/embedding is disabled (demo/testing mode — see
+  // config/embedding.config.ts), there are no CodeChunk rows to search, so
+  // skip the embedding API call entirely rather than burning a request to
+  // search zero rows. Chat runs on the repository overview alone.
+  if (!ENABLE_CHUNKING_EMBEDDING) {
+    return { overview, chunks: [] };
+  }
+
+  const queryEmbedding = await embedQuery(query);
+  const chunks = await retrieveRelevantChunks(repositoryId, queryEmbedding, RETRIEVAL_TOP_K);
 
   return { overview, chunks };
 };

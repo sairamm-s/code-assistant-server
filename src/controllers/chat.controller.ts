@@ -31,6 +31,11 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
 
     const { message } = req.body as SendMessageBody;
 
+    // Saved immediately, before retrieval/generation — a failed downstream
+    // call (e.g. a rate-limited or quota-exhausted LLM) must not silently
+    // drop the user's question from history.
+    await saveMessage(repositoryId, 'user', message);
+
     const retrievalStart = Date.now();
     const context = await buildRetrievalContext(repositoryId, message);
     const retrievalMs = Date.now() - retrievalStart;
@@ -42,9 +47,8 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
       similarity: chunk.similarity,
     }));
 
-    if (shouldRefuseForInsufficientContext(context.chunks)) {
+    if (shouldRefuseForInsufficientContext(context)) {
       const refusal = buildRefusalResponse();
-      await saveMessage(repositoryId, 'user', message);
       await saveMessage(repositoryId, 'assistant', refusal.answer, refusal.citations);
 
       logChatRequest({
@@ -68,7 +72,6 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
 
     const citations = extractCitations(answer, context.chunks);
 
-    await saveMessage(repositoryId, 'user', message);
     await saveMessage(repositoryId, 'assistant', answer, citations);
 
     logChatRequest({
@@ -84,6 +87,16 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
     res.json({ status: STATUS.success, data: { answer, citations } });
   } catch (err) {
     logger.error('Failed to generate chat response', { repositoryId, error: err instanceof Error ? err.message : err });
+
+    // The user's message was already saved above (or before this point failed,
+    // in which case there's nothing to reconcile) — leave a visible trace in
+    // history too, so a failed turn doesn't just vanish from the transcript.
+    await saveMessage(
+      repositoryId,
+      'assistant',
+      "Something went wrong generating a response. This is usually a transient issue (e.g. an API rate limit) — try asking again in a moment.",
+    ).catch(() => undefined);
+
     res.status(500).json({ status: STATUS.failed, message: 'Failed to generate a response' });
   }
 };

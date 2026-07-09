@@ -45,3 +45,11 @@ export const updateRepositoryStatus = (
 
 export const getRepositoryById = (repositoryId: string): Promise<Repository | null> =>
   prisma.repository.findUnique({ where: { id: repositoryId } });
+
+const DEFAULT_REPOSITORY_LIST_LIMIT = 50;
+
+export const listRepositories = (limit: number = DEFAULT_REPOSITORY_LIST_LIMIT): Promise<Repository[]> =>
+  prisma.repository.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
