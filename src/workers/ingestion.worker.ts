@@ -6,7 +6,7 @@ import { IngestJobPayload } from '../interfaces/repository.interface';
 import { getRepositoryWorkingDir } from '../lib/repo-storage';
 import { cloneRepository, extractZip, removeWorkingDir, walkFiles } from '../services/ingestion.service';
 import { getRepositoryById, updateRepositoryStatus } from '../services/repository.service';
-import { buildEmbeddedChunks } from '../services/pipeline.service';
+import { buildEmbeddedChunks, buildEmbeddedChunksForDemoFile } from '../services/pipeline.service';
 import { saveChunks } from '../services/code-chunk.service';
 import { buildRepositoryOverview } from '../services/overview.service';
 import { saveOverviews } from '../services/repository-overview.service';
@@ -57,8 +57,12 @@ const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
     stageStart = Date.now();
     await updateRepositoryStatus(repositoryId, 'chunking');
     await updateRepositoryStatus(repositoryId, 'embedding');
-    if (ENABLE_CHUNKING_EMBEDDING) {
-      const embeddedChunks = await buildEmbeddedChunks(workingDir, files);
+    if (true) {
+      // DEMO: embed only auth.service.ts (see pipeline.service.ts). Comment
+      // this line out and uncomment the one below to go back to full-repo embedding.
+      const embeddedChunks = await buildEmbeddedChunksForDemoFile(workingDir, files);
+      logger.info('embeddedChunks', { embeddedChunks });
+      // const embeddedChunks = await buildEmbeddedChunks(workingDir, files);
       await saveChunks(repositoryId, embeddedChunks);
     } else {
       logger.info('Chunking/embedding skipped (ENABLE_CHUNKING_EMBEDDING=false) — chat will use the repository overview only', {
@@ -68,7 +72,7 @@ const processIngestJob = async (job: Job<IngestJobPayload>): Promise<void> => {
     logStage(repositoryId, 'chunking_embedding', Date.now() - stageStart);
 
     await updateRepositoryStatus(repositoryId, 'ready', { fileCount: files.length });
-    await removeWorkingDir(workingDir);
+    // await removeWorkingDir(workingDir);
 
     logStage(repositoryId, 'ready', Date.now() - jobStart);
   } catch (err) {
